@@ -3,7 +3,8 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "tabularium hook user-prompt", "timeout": 10 }
+          { "type": "command", "command": "tabularium hook user-prompt", "timeout": 10 },
+          { "type": "command", "command": "custos hook user-prompt", "timeout": 10 }
         ]
       }
     ],
@@ -12,6 +13,39 @@
         "matcher": "Read|Edit|Write|MultiEdit",
         "hooks": [
           { "type": "command", "command": "tabularium hook post-tool", "timeout": 10 }
+        ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "custos hook post-tool", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "custos hook stop", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "custos hook session-start", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "custos hook session-end", "timeout": 10 }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          { "type": "command", "command": "custos hook pre-compact", "timeout": 10 }
         ]
       }
     ]
