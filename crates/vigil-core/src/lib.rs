@@ -10,6 +10,7 @@ pub mod gate;
 pub mod payload;
 pub mod receipt;
 pub mod scan;
+pub mod sink;
 pub mod target;
 pub mod verdict;
 
@@ -22,5 +23,9 @@ pub use receipt::{
     SignedScanReceipt, VerifyReport,
 };
 pub use scan::run_scan;
-pub use target::{AdapterError, EchoAdapter, OpenAiCompatAdapter, TargetAdapter, TargetIdentity};
-pub use verdict::{score, Verdict, VerdictRule};
+pub use sink::SinkKind;
+pub use target::{
+    AdapterError, EchoAdapter, OpenAiCompatAdapter, TargetAdapter, TargetIdentity, ToolCall,
+    ToolSpec, ToolTurn,
+};
+pub use verdict::{score, score_tool_turn, Verdict, VerdictRule};

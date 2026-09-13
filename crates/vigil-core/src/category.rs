@@ -54,12 +54,15 @@ impl OwaspCategory {
     }
 
     /// v1 scope per `docs/DESIGN.md` §3: does vigil ship a payload set for this category yet?
-    /// LLM01 (Week 1), LLM07 + LLM10 (Week 2) do. Keep this in sync with §3's table when a new
-    /// set ships — this function, not the README prose, is what `vigil payloads info` reports.
+    /// LLM01 (Week 1); LLM07 + LLM10 (Week 2); LLM05 + LLM06 (Week 3) do. Keep this in sync with
+    /// §3's table when a new set ships — this function, not the README prose, is what
+    /// `vigil payloads info` reports.
     pub fn has_payload_set(self) -> bool {
         matches!(
             self,
             OwaspCategory::Llm01PromptInjection
+                | OwaspCategory::Llm05ImproperOutputHandling
+                | OwaspCategory::Llm06ExcessiveAgency
                 | OwaspCategory::Llm07SystemPromptLeakage
                 | OwaspCategory::Llm10UnboundedConsumption
         )
@@ -77,7 +80,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exactly_week1_and_week2_categories_have_a_payload_set() {
+    fn exactly_the_week1_through_3_categories_have_a_payload_set() {
         let covered: Vec<_> = [
             OwaspCategory::Llm01PromptInjection,
             OwaspCategory::Llm02SensitiveInfoDisclosure,
@@ -97,6 +100,8 @@ mod tests {
             covered,
             vec![
                 OwaspCategory::Llm01PromptInjection,
+                OwaspCategory::Llm05ImproperOutputHandling,
+                OwaspCategory::Llm06ExcessiveAgency,
                 OwaspCategory::Llm07SystemPromptLeakage,
                 OwaspCategory::Llm10UnboundedConsumption,
             ]

@@ -13,6 +13,29 @@ pub struct TargetIdentity {
     pub model: Option<String>,
 }
 
+/// One tool/function the target is offered on a probe (LLM06's tool-calling surface).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolSpec {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema for the tool's arguments, in the shape OpenAI-compatible APIs expect.
+    pub parameters: serde_json::Value,
+}
+
+/// One tool call the target made, as reported by the API (name + raw JSON arguments string).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolCall {
+    pub name: String,
+    pub arguments: String,
+}
+
+/// A tool-calling turn's result: either a plain message, or one or more tool invocations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ToolTurn {
+    Message(String),
+    ToolCalls(Vec<ToolCall>),
+}
+
 #[derive(Debug, Error)]
 pub enum AdapterError {
     #[error("request to target failed: {0}")]
@@ -21,6 +44,8 @@ pub enum AdapterError {
     BadResponse(String),
     #[error("target response had no message content")]
     EmptyResponse,
+    #[error("this adapter does not support tool calling")]
+    ToolCallingUnsupported,
 }
 
 pub trait TargetAdapter {
@@ -28,11 +53,24 @@ pub trait TargetAdapter {
     /// Send one probe. `system_prompt`, when present, is sent as the target's system message —
     /// vigil never injects anything into it; it's the caller's own target configuration.
     fn send(&self, system_prompt: Option<&str>, user_prompt: &str) -> Result<String, AdapterError>;
+
+    /// Send one probe with a declared tool/function-calling surface (LLM06 — excessive agency).
+    /// Adapters that don't support tool calling keep this default, which reports the gap plainly
+    /// (an `errored` result) rather than silently skipping the probe or pretending to test it.
+    fn send_with_tools(
+        &self,
+        _system_prompt: Option<&str>,
+        _user_prompt: &str,
+        _tools: &[ToolSpec],
+    ) -> Result<ToolTurn, AdapterError> {
+        Err(AdapterError::ToolCallingUnsupported)
+    }
 }
 
 /// Echoes the user prompt back verbatim. Deliberately not a real target — it exists to exercise
 /// the harness and receipt path offline (unit/integration tests, `vigil scan --adapter echo`).
-/// Never use it to back the C2 claim (`docs/DESIGN.md` §5): that requires a real target.
+/// Never use it to back the C2 claim (`docs/DESIGN.md` §5): that requires a real target. It does
+/// not support tool calling (LLM06 probes against it come back `errored`, honestly).
 pub struct EchoAdapter;
 
 impl TargetAdapter for EchoAdapter {
@@ -81,6 +119,19 @@ impl OpenAiCompatAdapter {
         self.timeout = timeout;
         self
     }
+
+    fn post(&self, body: serde_json::Value) -> Result<serde_json::Value, AdapterError> {
+        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let mut req = ureq::post(&url).timeout(self.timeout);
+        if let Some(k) = &self.api_key {
+            req = req.set("Authorization", &format!("Bearer {k}"));
+        }
+        let resp = req
+            .send_json(body)
+            .map_err(|e| AdapterError::Request(e.to_string()))?;
+        resp.into_json()
+            .map_err(|e| AdapterError::BadResponse(e.to_string()))
+    }
 }
 
 impl TargetAdapter for OpenAiCompatAdapter {
@@ -103,20 +154,71 @@ impl TargetAdapter for OpenAiCompatAdapter {
             "messages": messages,
         });
 
-        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        let mut req = ureq::post(&url).timeout(self.timeout);
-        if let Some(k) = &self.api_key {
-            req = req.set("Authorization", &format!("Bearer {k}"));
-        }
-        let resp = req
-            .send_json(body)
-            .map_err(|e| AdapterError::Request(e.to_string()))?;
-        let json: serde_json::Value = resp
-            .into_json()
-            .map_err(|e| AdapterError::BadResponse(e.to_string()))?;
+        let json = self.post(body)?;
         json["choices"][0]["message"]["content"]
             .as_str()
             .map(str::to_string)
+            .ok_or(AdapterError::EmptyResponse)
+    }
+
+    fn send_with_tools(
+        &self,
+        system_prompt: Option<&str>,
+        user_prompt: &str,
+        tools: &[ToolSpec],
+    ) -> Result<ToolTurn, AdapterError> {
+        let mut messages = Vec::new();
+        if let Some(s) = system_prompt {
+            messages.push(serde_json::json!({"role": "system", "content": s}));
+        }
+        messages.push(serde_json::json!({"role": "user", "content": user_prompt}));
+
+        let tool_defs: Vec<serde_json::Value> = tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    }
+                })
+            })
+            .collect();
+
+        let body = serde_json::json!({
+            "model": self.model,
+            "messages": messages,
+            "tools": tool_defs,
+            "tool_choice": "auto",
+        });
+
+        let json = self.post(body)?;
+        let message = &json["choices"][0]["message"];
+
+        if let Some(calls) = message["tool_calls"].as_array() {
+            if !calls.is_empty() {
+                let parsed: Vec<ToolCall> = calls
+                    .iter()
+                    .filter_map(|c| {
+                        let name = c["function"]["name"].as_str()?.to_string();
+                        let arguments = c["function"]["arguments"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_string();
+                        Some(ToolCall { name, arguments })
+                    })
+                    .collect();
+                if !parsed.is_empty() {
+                    return Ok(ToolTurn::ToolCalls(parsed));
+                }
+            }
+        }
+
+        message["content"]
+            .as_str()
+            .map(|s| ToolTurn::Message(s.to_string()))
             .ok_or(AdapterError::EmptyResponse)
     }
 }
@@ -130,6 +232,13 @@ mod tests {
         let a = EchoAdapter;
         assert_eq!(a.send(None, "hello").unwrap(), "hello");
         assert_eq!(a.identity().kind, "echo");
+    }
+
+    #[test]
+    fn echo_adapter_does_not_support_tool_calling() {
+        let a = EchoAdapter;
+        let err = a.send_with_tools(None, "hello", &[]).unwrap_err();
+        assert!(matches!(err, AdapterError::ToolCallingUnsupported));
     }
 
     #[test]

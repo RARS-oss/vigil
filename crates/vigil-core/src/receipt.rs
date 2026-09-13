@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::sha256_hex;
-use crate::target::TargetIdentity;
+use crate::target::{TargetIdentity, ToolCall};
 
 pub const SCHEMA: &str = "vigil-receipt/v0";
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -90,6 +90,10 @@ pub struct PayloadResult {
     pub response: String,
     pub response_sha256: String,
     pub response_bytes: u64,
+    /// Tool calls the target made instead of (or alongside) a text reply — empty for every
+    /// non-agency (LLM06) payload, and for an agency payload the target answered in plain text.
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCall>,
     pub verdict: String,
     pub error: Option<String>,
 }
@@ -275,6 +279,7 @@ mod tests {
                 response: "no.".into(),
                 response_sha256: sha256_hex(b"no."),
                 response_bytes: 3,
+                tool_calls: Vec::new(),
                 verdict: "resisted".into(),
                 error: None,
             }],

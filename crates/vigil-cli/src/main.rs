@@ -40,10 +40,14 @@ enum Cmd {
 /// listed here — this enum, not just the README, is the honest v1 scope (`docs/DESIGN.md` §3).
 #[derive(ValueEnum, Clone, Copy, Debug)]
 enum CategoryArg {
-    /// Every category vigil currently covers (LLM01 + LLM07 + LLM10), combined.
+    /// Every category vigil currently covers (LLM01/05/06/07/10), combined.
     Core,
     /// LLM01 — Prompt Injection.
     Llm01,
+    /// LLM05 — Improper Output Handling.
+    Llm05,
+    /// LLM06 — Excessive Agency. Needs an adapter that supports tool calling.
+    Llm06,
     /// LLM07 — System Prompt Leakage.
     Llm07,
     /// LLM10 — Unbounded Consumption.
@@ -55,6 +59,8 @@ impl CategoryArg {
         match self {
             CategoryArg::Core => vc::PayloadSet::builtin_core(),
             CategoryArg::Llm01 => vc::PayloadSet::builtin_llm01(),
+            CategoryArg::Llm05 => vc::PayloadSet::builtin_llm05(),
+            CategoryArg::Llm06 => vc::PayloadSet::builtin_llm06(),
             CategoryArg::Llm07 => vc::PayloadSet::builtin_llm07(),
             CategoryArg::Llm10 => vc::PayloadSet::builtin_llm10(),
         }
