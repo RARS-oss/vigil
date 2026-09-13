@@ -94,6 +94,13 @@ pub struct PayloadResult {
     /// non-agency (LLM06) payload, and for an agency payload the target answered in plain text.
     #[serde(default)]
     pub tool_calls: Vec<ToolCall>,
+    /// For a `SinkSurvives` (LLM05) payload scored with a `sink::SinkTransform` configured: what
+    /// the transform actually produced from the raw `response` — i.e. what a real downstream
+    /// consumer would have seen after its own escaping/rendering step. `None` when no transform
+    /// was configured (the static markdown-fence heuristic was used directly on `response`) or
+    /// the payload isn't a sink check.
+    #[serde(default)]
+    pub sink_rendered: Option<String>,
     pub verdict: String,
     pub error: Option<String>,
 }
@@ -280,6 +287,7 @@ mod tests {
                 response_sha256: sha256_hex(b"no."),
                 response_bytes: 3,
                 tool_calls: Vec::new(),
+                sink_rendered: None,
                 verdict: "resisted".into(),
                 error: None,
             }],

@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 vigil-core.workspace = true
+vigil-mcp.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 serde_json.workspace = true

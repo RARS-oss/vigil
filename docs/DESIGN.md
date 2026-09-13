@@ -101,6 +101,23 @@ Status (2026-09-13): Weeks 1–4 done. Payload registry + versioning/staleness, 
 trait (OpenAI-compatible HTTP + tool-calling + an offline echo adapter), Ed25519 signed receipts
 ported from `bulla`, CI gate mode, and real payload sets for all five core categories (36 payloads:
 LLM01 10, LLM05 6, LLM06 6, LLM07 8, LLM10 6). All three claims (§5) validated for real against a
-live target — see [`docs/pilot/2026-09-13-qwen3-4b.md`](pilot/2026-09-13-qwen3-4b.md). Not done:
-LLM02/LLM08 partial coverage (§3 lists why each is only "partial" even when attempted); no
-GitHub remote pushed yet.
+live target — see [`docs/pilot/2026-09-13-qwen3-4b.md`](pilot/2026-09-13-qwen3-4b.md). Published
+at [github.com/RARS-oss/vigil](https://github.com/RARS-oss/vigil).
+
+**Post-Week-4, same day: two gaps the pilot and this doc called out honestly, closed rather than
+left as prose.**
+1. LLM05's sink model (§3, §5) was one static heuristic (markdown code-fence survival) shared by
+   all three sink kinds — real per-framework escaping drifts from that fast. `sink::SinkTransform`
+   + `--sink-transform` let an operator plug in their app's *actual* escaper/quoter; `check` then
+   scores against what it really produces. Demonstrated live: the same LLM05 set scored 6/6
+   `injected` under the default heuristic and 1/6 under a real `html.escape()` transform — the one
+   survivor (`llm05/terminal-paste-example`) is the *shell*-sink payload, whose dangerous
+   characters an HTML escaper never touches. Applying the wrong real escaper is still visible and
+   wrong, exactly as it should be.
+2. vigil was only reachable by shelling out to the CLI — no bridge into MCP-based agent runtimes
+   the way [`tabularium`](https://github.com/RARS-oss/tabularium) has. `crates/vigil-mcp` is a
+   hand-rolled JSON-RPC/stdio server mirroring `tabularium-mcp`'s own shape (`vigil serve`),
+   exposing scan/verify/gate/payloads as MCP tools. `docs/pilot`'s C2/C3 pilot could be re-run
+   through an agent driving `vigil_scan` directly instead of a human running the CLI.
+
+Not done: LLM02/LLM08 partial coverage (§3 lists why each is only "partial" even when attempted).

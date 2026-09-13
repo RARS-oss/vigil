@@ -34,6 +34,8 @@ enum Cmd {
     Gate(GateArgs),
     /// Print the public key for a signing seed (creating it if absent).
     Keygen(KeygenArgs),
+    /// Serve the Model Context Protocol over stdio (for Claude Code, Cursor, or any MCP client).
+    Serve,
 }
 
 /// Which built-in payload set to use. Only categories vigil actually ships a corpus for are
@@ -127,6 +129,12 @@ struct ScanArgs {
     /// regression, exits non-zero.
     #[arg(long)]
     baseline: Option<PathBuf>,
+    /// For LLM05 (SinkSurvives) payloads: an executable that reads the target's raw response on
+    /// stdin and writes what a real downstream consumer would see (after your app's actual HTML-
+    /// escaping/shell-quoting/query-parameterizing) on stdout. Without this, LLM05 falls back to
+    /// vigil's built-in static heuristic (markdown code-fence survival) -- real, but generic.
+    #[arg(long)]
+    sink_transform: Option<PathBuf>,
     /// Emit compact JSON to stdout instead of the human-readable report.
     #[arg(long)]
     json: bool,
@@ -163,7 +171,14 @@ fn main() -> Result<()> {
         Cmd::Verify(a) => cmd_verify(a),
         Cmd::Gate(a) => cmd_gate(a),
         Cmd::Keygen(a) => cmd_keygen(a),
+        Cmd::Serve => cmd_serve(),
     }
+}
+
+fn cmd_serve() -> Result<()> {
+    vigil_mcp::McpServer::new()
+        .run_stdio()
+        .context("running the MCP server over stdio")
 }
 
 fn cmd_payloads(a: PayloadsArgs) -> Result<()> {
@@ -219,10 +234,19 @@ fn build_adapter(a: &ScanArgs) -> Result<Box<dyn vc::TargetAdapter>> {
 fn cmd_scan(a: ScanArgs) -> Result<()> {
     let adapter = build_adapter(&a)?;
     let set = a.category.payload_set();
-    let body = vc::run_scan(adapter.as_ref(), &set, a.system_prompt.as_deref());
+    let transform = a
+        .sink_transform
+        .as_ref()
+        .map(|p| vc::ExternalCommandTransform::new(p.clone()));
+    let body = vc::run_scan(
+        adapter.as_ref(),
+        &set,
+        a.system_prompt.as_deref(),
+        transform.as_ref().map(|t| t as &dyn vc::SinkTransform),
+    );
 
-    let key_path = a.key.clone().unwrap_or_else(default_key_path);
-    let seed = load_or_create_seed(&key_path)?;
+    let key_path = a.key.clone().unwrap_or_else(vc::default_key_path);
+    let seed = vc::load_or_create_seed(&key_path)?;
     let receipt = vc::sign(body, &seed);
 
     fs::write(&a.out, serde_json::to_vec_pretty(&receipt)?)
@@ -357,8 +381,8 @@ fn print_gate_report(report: &vc::GateReport, json: bool) {
 }
 
 fn cmd_keygen(a: KeygenArgs) -> Result<()> {
-    let key_path = a.key.unwrap_or_else(default_key_path);
-    let seed = load_or_create_seed(&key_path)?;
+    let key_path = a.key.unwrap_or_else(vc::default_key_path);
+    let seed = vc::load_or_create_seed(&key_path)?;
     println!("pubkey {}", vc::pubkey_hex(&seed));
     println!("seed   {}", key_path.display());
     Ok(())
@@ -383,39 +407,6 @@ fn load_verified_receipt(path: &Path) -> Result<vc::SignedScanReceipt> {
         );
     }
     Ok(receipt)
-}
-
-fn default_key_path() -> PathBuf {
-    let base = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    base.join(".vigil").join("ed25519.seed")
-}
-
-/// Load a 32-byte Ed25519 seed from `path` (raw 32 bytes or 64 hex chars), creating one if absent.
-fn load_or_create_seed(path: &Path) -> Result<[u8; 32]> {
-    if path.exists() {
-        let raw = fs::read(path).with_context(|| format!("reading key {}", path.display()))?;
-        if raw.len() == 32 {
-            return Ok(<[u8; 32]>::try_from(raw).unwrap());
-        }
-        let txt = String::from_utf8_lossy(&raw);
-        if let Some(seed) = vc::seed_from_hex(&txt) {
-            return Ok(seed);
-        }
-        bail!(
-            "key file {} is neither 32 raw bytes nor 64 hex chars",
-            path.display()
-        );
-    }
-    let seed = vc::generate_seed();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
-    fs::write(path, vc::seed_to_hex(&seed))
-        .with_context(|| format!("writing key {}", path.display()))?;
-    Ok(seed)
 }
 
 fn now_epoch() -> u64 {

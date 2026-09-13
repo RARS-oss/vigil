@@ -1,0 +1,14 @@
+[package]
+name = "vigil-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "vigil: JSON-RPC/stdio MCP server exposing scan/verify/gate/payloads to Claude Code, Cursor, or any MCP client (mirrors tabularium-mcp's shape)"
+
+[dependencies]
+serde_json.workspace = true
+vigil-core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

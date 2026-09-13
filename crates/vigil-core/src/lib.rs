@@ -7,6 +7,7 @@
 pub mod category;
 pub mod crypto;
 pub mod gate;
+pub mod keys;
 pub mod payload;
 pub mod receipt;
 pub mod scan;
@@ -17,13 +18,14 @@ pub mod verdict;
 pub use category::OwaspCategory;
 pub use crypto::{generate_seed, pubkey_hex, seed_from_hex, seed_to_hex, sha256_hex};
 pub use gate::{compare as gate_compare, GateReport, Regression};
+pub use keys::{default_key_path, load_or_create_seed, KeyError};
 pub use payload::{Payload, PayloadSet, BUILTIN_CATEGORIES, STALE_AFTER_DAYS};
 pub use receipt::{
     sign, verify, Event, PayloadResult, RunManifest, ScanReceiptBody, ScanSummary,
     SignedScanReceipt, VerifyReport,
 };
 pub use scan::run_scan;
-pub use sink::SinkKind;
+pub use sink::{ExternalCommandTransform, SinkKind, SinkTransform};
 pub use target::{
     AdapterError, EchoAdapter, OpenAiCompatAdapter, TargetAdapter, TargetIdentity, ToolCall,
     ToolSpec, ToolTurn,

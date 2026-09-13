@@ -76,6 +76,7 @@ mod tests {
                 response_sha256: crate::crypto::sha256_hex(b"r"),
                 response_bytes: 1,
                 tool_calls: Vec::new(),
+                sink_rendered: None,
                 verdict: verdict.to_string(),
                 error: None,
             })

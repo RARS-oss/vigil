@@ -25,7 +25,7 @@ for the "v1 scope" column below, not this table — if they ever disagree, trust
 | Category | v1 scope | Payloads |
 |---|---|---|
 | LLM01 Prompt Injection | **Core.** | 10 |
-| LLM05 Improper Output Handling | **Core.** Tested against a simulated downstream sink (HTML/shell/SQL) — real sink-specific semantics (actual escaping/quoting rules) are a documented gap, not a silent one. | 6 |
+| LLM05 Improper Output Handling | **Core.** Tested against a simulated downstream sink (HTML/shell/SQL): a dangerous construct that only survives inside markdown code-fencing is scored safe, one sitting in plain prose isn't. That's a real but generic model — plug in `--sink-transform` (an executable running your app's *actual* escaper/quoter) to score against the real thing instead. | 6 |
 | LLM06 Excessive Agency | **Core.** Needs an adapter with tool/function-calling support. | 6 |
 | LLM07 System Prompt Leakage | **Core.** | 8 |
 | LLM10 Unbounded Consumption | **Core.** Scored by response size/repetition, not a marker. | 6 |
@@ -72,10 +72,32 @@ vigil verify receipt.json
 vigil scan --adapter openai --base-url ... --model ... --baseline last-good-receipt.json
 # or, against two receipts you already have:
 vigil gate last-good-receipt.json new-receipt.json
+
+# LLM05 against your app's real escaper instead of vigil's built-in static heuristic:
+vigil scan --category llm05 --sink-transform examples/html-escape-sink.py ...  # Unix, executable
+vigil scan --category llm05 --sink-transform examples/html-escape-sink.cmd ... # Windows
 ```
 
 `vigil keygen` prints (creating if absent) the Ed25519 public key at `~/.vigil/ed25519.seed`,
 which every command above uses by default (`--key` overrides it).
+
+## Use from Claude Code, Cursor, or any MCP client
+
+`vigil` is not only a CLI you shell out to — `vigil serve` runs a JSON-RPC/stdio MCP server
+(`crates/vigil-mcp`, hand-rolled, no async runtime — mirrors
+[`tabularium-mcp`](https://github.com/RARS-oss/tabularium)'s own shape) exposing
+`vigil_scan`/`vigil_verify`/`vigil_gate`/`vigil_payloads_list`/`vigil_payloads_info`/
+`vigil_keygen`/`vigil_info` as tools. Add to `.mcp.json` in your project (example at
+[`integrations/claude-code/mcp.json`](integrations/claude-code/mcp.json)):
+
+```json
+{ "mcpServers": { "vigil": { "command": "vigil", "args": ["serve"] } } }
+```
+
+A `vigil_scan` tool call is not fast — it blocks on network round-trips to the target for the
+whole payload set, same as the CLI. It writes the same signed receipt to disk either way; the
+tool result is the manifest/summary/path, not the full transcript-carrying JSON, so an agent
+calling it doesn't pay for every raw prompt/response inline unless it explicitly reads the file.
 
 ## The receipt
 
@@ -84,18 +106,24 @@ Every `vigil scan` writes a JSON file with this shape (see `crates/vigil-core/sr
 - `manifest` — the exact payload-set version + content-hash root + age (and whether it's
   flagged `stale`, per `STALE_AFTER_DAYS`), and the target's identity (adapter kind, endpoint,
   model).
-- `results` — one entry per payload: the full prompt and response (or tool calls, for LLM06),
-  their sha256, and the verdict (`injected` / `resisted` / `inconclusive`).
+- `results` — one entry per payload: the full prompt and response (or tool calls, for LLM06;
+  or what a `--sink-transform` actually rendered, for LLM05, alongside the untouched raw
+  response), their sha256, and the verdict (`injected` / `resisted` / `inconclusive`).
 - `events` — a hash-chained log of the run (ported from `bulla`'s event chain).
 - `body_digest` + `pubkey` + `sig` — Ed25519 over the canonical body. `vigil verify` recomputes
   all three independently; a single byte changed anywhere in the body breaks the signature.
 
 ## Status
 
-Weeks 1–3 of the build (`docs/DESIGN.md` §6) are done: payload registry with versioning and
-staleness, the target-adapter trait (OpenAI-compatible HTTP + an offline echo adapter for
-testing), Ed25519 signed receipts, CI gate mode, and real payload sets for all 5 "core"
-categories. Week 4 (a real-target pilot run, this README) is in progress — see
+Weeks 1–4 of the build (`docs/DESIGN.md` §6) are done: payload registry with versioning and
+staleness, the target-adapter trait (OpenAI-compatible HTTP + tool-calling + an offline echo
+adapter for testing), Ed25519 signed receipts, CI gate mode, real payload sets for all 5 "core"
+categories, and a real-target pilot run validating all three claims (C1–C3) — see
 [`docs/pilot/`](docs/pilot) for the actual results, misses included.
+
+Since then: an MCP server (`vigil serve`) so vigil isn't only a shell-exec CLI, and
+`--sink-transform` so LLM05 can score against a real escaper instead of only the built-in static
+heuristic — both closing gaps the pilot and its own docs called out honestly rather than papering
+over.
 
 License: MIT OR Apache-2.0.

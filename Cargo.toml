@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/vigil-core",
+    "crates/vigil-mcp",
     "crates/vigil-cli",
 ]
 
@@ -15,12 +16,16 @@ description = "vigil: an OWASP LLM Top-10 red-team scanner with Ed25519-signed, 
 [workspace.dependencies]
 # vigil-core is the payload registry + target-adapter trait + receipt model (ported from bulla-core).
 vigil-core = { path = "crates/vigil-core", version = "0.1.0" }
+# vigil-mcp is the JSON-RPC/stdio MCP server (mirrors tabularium-mcp's shape), exposing scan/
+# verify/gate/payloads to Claude Code, Cursor, or any MCP client -- not just the CLI.
+vigil-mcp = { path = "crates/vigil-mcp", version = "0.1.0" }
 
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive", "env"] }
+tempfile = "3"
 
 # receipt / crypto — same versions as bulla-core, since this is a direct port of its receipt model.
 sha2 = "0.10"
