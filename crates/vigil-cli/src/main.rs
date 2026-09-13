@@ -1,5 +1,6 @@
 //! vigil — scan an LLM-application target with a versioned attack payload set and emit a signed,
-//! reproducible receipt; verify one offline with `vigil verify`.
+//! reproducible receipt; verify one offline with `vigil verify`; gate CI on regressions with
+//! `vigil gate`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,8 +30,35 @@ enum Cmd {
     Scan(ScanArgs),
     /// Verify a receipt offline: signature, digest, and event chain.
     Verify(VerifyArgs),
+    /// CI gate: fail if a payload the baseline resisted is now injected in a newer receipt.
+    Gate(GateArgs),
     /// Print the public key for a signing seed (creating it if absent).
     Keygen(KeygenArgs),
+}
+
+/// Which built-in payload set to use. Only categories vigil actually ships a corpus for are
+/// listed here — this enum, not just the README, is the honest v1 scope (`docs/DESIGN.md` §3).
+#[derive(ValueEnum, Clone, Copy, Debug)]
+enum CategoryArg {
+    /// Every category vigil currently covers (LLM01 + LLM07 + LLM10), combined.
+    Core,
+    /// LLM01 — Prompt Injection.
+    Llm01,
+    /// LLM07 — System Prompt Leakage.
+    Llm07,
+    /// LLM10 — Unbounded Consumption.
+    Llm10,
+}
+
+impl CategoryArg {
+    fn payload_set(self) -> vc::PayloadSet {
+        match self {
+            CategoryArg::Core => vc::PayloadSet::builtin_core(),
+            CategoryArg::Llm01 => vc::PayloadSet::builtin_llm01(),
+            CategoryArg::Llm07 => vc::PayloadSet::builtin_llm07(),
+            CategoryArg::Llm10 => vc::PayloadSet::builtin_llm10(),
+        }
+    }
 }
 
 #[derive(Parser)]
@@ -41,10 +69,16 @@ struct PayloadsArgs {
 
 #[derive(Subcommand)]
 enum PayloadsCmd {
-    /// List every payload's id, technique, and description.
-    List,
+    /// List every payload's category, id, technique, and description.
+    List(CategorySelectArgs),
     /// Print the set's version, content-addressed root, and staleness.
-    Info,
+    Info(CategorySelectArgs),
+}
+
+#[derive(Parser)]
+struct CategorySelectArgs {
+    #[arg(long, value_enum, default_value = "core")]
+    category: CategoryArg,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -57,6 +91,8 @@ enum AdapterKind {
 
 #[derive(Parser)]
 struct ScanArgs {
+    #[arg(long, value_enum, default_value = "core")]
+    category: CategoryArg,
     #[arg(long, value_enum, default_value = "openai")]
     adapter: AdapterKind,
     /// Base URL for the openai adapter, e.g. https://api.openai.com/v1 or http://localhost:11434/v1.
@@ -75,7 +111,12 @@ struct ScanArgs {
     /// Ed25519 signing seed file. Default: ~/.vigil/ed25519.seed (created if absent).
     #[arg(long)]
     key: Option<PathBuf>,
-    /// Emit a compact JSON summary to stdout instead of the human-readable report.
+    /// A previous signed receipt to gate this run against (see `vigil gate`). The scan still
+    /// writes its receipt either way; this just also runs the regression check and, on a
+    /// regression, exits non-zero.
+    #[arg(long)]
+    baseline: Option<PathBuf>,
+    /// Emit compact JSON to stdout instead of the human-readable report.
     #[arg(long)]
     json: bool,
 }
@@ -84,6 +125,16 @@ struct ScanArgs {
 struct VerifyArgs {
     /// Path to a vigil-receipt.json.
     receipt: PathBuf,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Parser)]
+struct GateArgs {
+    /// The known-good baseline receipt.
+    baseline: PathBuf,
+    /// The receipt from the run just performed.
+    current: PathBuf,
     #[arg(long)]
     json: bool,
 }
@@ -99,19 +150,24 @@ fn main() -> Result<()> {
         Cmd::Payloads(a) => cmd_payloads(a),
         Cmd::Scan(a) => cmd_scan(a),
         Cmd::Verify(a) => cmd_verify(a),
+        Cmd::Gate(a) => cmd_gate(a),
         Cmd::Keygen(a) => cmd_keygen(a),
     }
 }
 
 fn cmd_payloads(a: PayloadsArgs) -> Result<()> {
-    let set = vc::PayloadSet::builtin_llm01();
     match a.cmd {
-        PayloadsCmd::List => {
+        PayloadsCmd::List(sel) => {
+            let set = sel.category.payload_set();
             for p in &set.payloads {
-                println!("{:<40} {:<24} {}", p.id, p.technique, p.description);
+                println!(
+                    "{:<7} {:<40} {:<24} {}",
+                    p.category, p.id, p.technique, p.description
+                );
             }
         }
-        PayloadsCmd::Info => {
+        PayloadsCmd::Info(sel) => {
+            let set = sel.category.payload_set();
             let now = now_epoch();
             let age = set.age_days(now);
             println!("version {}", set.version);
@@ -150,7 +206,7 @@ fn build_adapter(a: &ScanArgs) -> Result<Box<dyn vc::TargetAdapter>> {
 
 fn cmd_scan(a: ScanArgs) -> Result<()> {
     let adapter = build_adapter(&a)?;
-    let set = vc::PayloadSet::builtin_llm01();
+    let set = a.category.payload_set();
     let body = vc::run_scan(adapter.as_ref(), &set, a.system_prompt.as_deref());
 
     let key_path = a.key.clone().unwrap_or_else(default_key_path);
@@ -183,13 +239,20 @@ fn cmd_scan(a: ScanArgs) -> Result<()> {
             &receipt.pubkey[..12.min(receipt.pubkey.len())]
         );
     }
+
+    if let Some(baseline_path) = &a.baseline {
+        let baseline = load_verified_receipt(baseline_path)?;
+        let report = vc::gate_compare(&baseline.body, &receipt.body);
+        print_gate_report(&report, a.json);
+        if !report.passed() {
+            std::process::exit(1);
+        }
+    }
     Ok(())
 }
 
 fn cmd_verify(a: VerifyArgs) -> Result<()> {
-    let raw = fs::read(&a.receipt).with_context(|| format!("reading {}", a.receipt.display()))?;
-    let receipt: vc::SignedScanReceipt =
-        serde_json::from_slice(&raw).context("parsing receipt json")?;
+    let receipt = load_receipt(&a.receipt)?;
     let report = vc::verify(&receipt);
 
     if a.json {
@@ -235,12 +298,79 @@ fn cmd_verify(a: VerifyArgs) -> Result<()> {
     Ok(())
 }
 
+fn cmd_gate(a: GateArgs) -> Result<()> {
+    let baseline = load_verified_receipt(&a.baseline)?;
+    let current = load_verified_receipt(&a.current)?;
+    let report = vc::gate_compare(&baseline.body, &current.body);
+    print_gate_report(&report, a.json);
+    if !report.passed() {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn print_gate_report(report: &vc::GateReport, json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "passed": report.passed(),
+                "regressions": report.regressions,
+                "new_payloads": report.new_payloads,
+            })
+        );
+        return;
+    }
+    if report.regressions.is_empty() {
+        println!("gate        PASS (no regressions)");
+    } else {
+        println!(
+            "gate        FAIL ({} regression(s)):",
+            report.regressions.len()
+        );
+        for r in &report.regressions {
+            println!(
+                "  - {}: {} -> {}",
+                r.payload_id, r.baseline_verdict, r.current_verdict
+            );
+        }
+    }
+    if !report.new_payloads.is_empty() {
+        println!(
+            "note        {} payload(s) had no baseline entry (new set or different corpus): {}",
+            report.new_payloads.len(),
+            report.new_payloads.join(", ")
+        );
+    }
+}
+
 fn cmd_keygen(a: KeygenArgs) -> Result<()> {
     let key_path = a.key.unwrap_or_else(default_key_path);
     let seed = load_or_create_seed(&key_path)?;
     println!("pubkey {}", vc::pubkey_hex(&seed));
     println!("seed   {}", key_path.display());
     Ok(())
+}
+
+fn load_receipt(path: &Path) -> Result<vc::SignedScanReceipt> {
+    let raw = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_slice(&raw).context("parsing receipt json")
+}
+
+/// Load a receipt and refuse to hand it back unless it verifies intact — a baseline the gate
+/// trusts must itself be an unforged record, or a corrupted/tampered baseline could mask a real
+/// regression instead of catching one.
+fn load_verified_receipt(path: &Path) -> Result<vc::SignedScanReceipt> {
+    let receipt = load_receipt(path)?;
+    let report = vc::verify(&receipt);
+    if !report.intact() {
+        bail!(
+            "refusing to gate against a non-intact receipt {}: {}",
+            path.display(),
+            report.notes.join("; ")
+        );
+    }
+    Ok(receipt)
 }
 
 fn default_key_path() -> PathBuf {

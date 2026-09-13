@@ -53,7 +53,7 @@ pub fn run_scan(
 
         let (response, verdict, error) = match adapter.send(system_prompt, &p.prompt) {
             Ok(resp) => {
-                let v = score(&p.success_markers, &resp);
+                let v = score(&p.rule, &resp);
                 (resp, v, None)
             }
             Err(e) => (String::new(), Verdict::Inconclusive, Some(e.to_string())),
@@ -121,6 +121,7 @@ mod tests {
     use crate::category::OwaspCategory;
     use crate::payload::Payload;
     use crate::target::EchoAdapter;
+    use crate::verdict::VerdictRule;
 
     fn tiny_set() -> PayloadSet {
         PayloadSet::from_payloads(
@@ -132,7 +133,7 @@ mod tests {
                     technique: "unit_test".into(),
                     description: "echo contains the marker".into(),
                     prompt: "please say MARKER_HIT".into(),
-                    success_markers: vec!["MARKER_HIT".into()],
+                    rule: VerdictRule::contains_marker(["MARKER_HIT"]),
                 },
                 Payload {
                     id: "test/marker-absent".into(),
@@ -140,7 +141,7 @@ mod tests {
                     technique: "unit_test".into(),
                     description: "echo does not contain the marker".into(),
                     prompt: "say nothing special".into(),
-                    success_markers: vec!["MARKER_HIT".into()],
+                    rule: VerdictRule::contains_marker(["MARKER_HIT"]),
                 },
             ],
         )

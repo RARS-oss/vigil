@@ -54,10 +54,15 @@ impl OwaspCategory {
     }
 
     /// v1 scope per `docs/DESIGN.md` §3: does vigil ship a payload set for this category yet?
-    /// Only LLM01 does, as of Week 1. Keep this in sync with §3's table when a new set ships —
-    /// this function, not the README prose, is what `vigil payloads info` reports as covered.
+    /// LLM01 (Week 1), LLM07 + LLM10 (Week 2) do. Keep this in sync with §3's table when a new
+    /// set ships — this function, not the README prose, is what `vigil payloads info` reports.
     pub fn has_payload_set(self) -> bool {
-        matches!(self, OwaspCategory::Llm01PromptInjection)
+        matches!(
+            self,
+            OwaspCategory::Llm01PromptInjection
+                | OwaspCategory::Llm07SystemPromptLeakage
+                | OwaspCategory::Llm10UnboundedConsumption
+        )
     }
 }
 
@@ -72,7 +77,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_llm01_has_a_payload_set_in_v1() {
+    fn exactly_week1_and_week2_categories_have_a_payload_set() {
         let covered: Vec<_> = [
             OwaspCategory::Llm01PromptInjection,
             OwaspCategory::Llm02SensitiveInfoDisclosure,
@@ -88,6 +93,13 @@ mod tests {
         .into_iter()
         .filter(|c| c.has_payload_set())
         .collect();
-        assert_eq!(covered, vec![OwaspCategory::Llm01PromptInjection]);
+        assert_eq!(
+            covered,
+            vec![
+                OwaspCategory::Llm01PromptInjection,
+                OwaspCategory::Llm07SystemPromptLeakage,
+                OwaspCategory::Llm10UnboundedConsumption,
+            ]
+        );
     }
 }
