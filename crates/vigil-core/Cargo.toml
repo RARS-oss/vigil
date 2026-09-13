@@ -1,0 +1,19 @@
+[package]
+name = "vigil-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "vigil payload registry, target-adapter trait, and signed scan-receipt model (receipt format ported from bulla-core)"
+keywords = ["security", "llm", "red-team", "attestation", "owasp"]
+categories = ["development-tools", "cryptography"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+thiserror.workspace = true
+ureq.workspace = true

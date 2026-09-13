@@ -1,0 +1,24 @@
+//! vigil-core — payload registry, target-adapter trait, and the signed scan-receipt model.
+//!
+//! See `docs/DESIGN.md` for the project's scope and claims. This crate stays free of any CLI or
+//! I/O beyond the target adapters themselves, so it can be unit-tested end to end with
+//! `target::EchoAdapter` and no network.
+
+pub mod category;
+pub mod crypto;
+pub mod payload;
+pub mod receipt;
+pub mod scan;
+pub mod target;
+pub mod verdict;
+
+pub use category::OwaspCategory;
+pub use crypto::{generate_seed, pubkey_hex, seed_from_hex, seed_to_hex, sha256_hex};
+pub use payload::{Payload, PayloadSet, STALE_AFTER_DAYS};
+pub use receipt::{
+    sign, verify, Event, PayloadResult, RunManifest, ScanReceiptBody, ScanSummary,
+    SignedScanReceipt, VerifyReport,
+};
+pub use scan::run_scan;
+pub use target::{AdapterError, EchoAdapter, OpenAiCompatAdapter, TargetAdapter, TargetIdentity};
+pub use verdict::{score, Verdict};
