@@ -112,6 +112,11 @@ struct ScanArgs {
     /// not part of the attack).
     #[arg(long)]
     system_prompt: Option<String>,
+    /// Per-request timeout for the openai adapter. Local models (Ollama, vLLM on CPU) and the
+    /// deliberately runaway LLM10 prompts can both run long — the 30s a plain chat request would
+    /// be fine with is too short here.
+    #[arg(long, default_value_t = 120)]
+    timeout_secs: u64,
     #[arg(long, default_value = "vigil-receipt.json")]
     out: PathBuf,
     /// Ed25519 signing seed file. Default: ~/.vigil/ed25519.seed (created if absent).
@@ -201,7 +206,8 @@ fn build_adapter(a: &ScanArgs) -> Result<Box<dyn vc::TargetAdapter>> {
                 .base_url
                 .clone()
                 .context("--base-url is required for the openai adapter")?;
-            let mut adapter = vc::OpenAiCompatAdapter::new(base_url, a.model.clone());
+            let mut adapter = vc::OpenAiCompatAdapter::new(base_url, a.model.clone())
+                .with_timeout(std::time::Duration::from_secs(a.timeout_secs));
             if let Some(k) = &a.api_key {
                 adapter = adapter.with_api_key(k.clone());
             }

@@ -67,12 +67,23 @@ to replace.
 
 - **C1 (coverage honesty).** The tool never reports "clean" without naming the exact payload-set
   version and its age; a stale payload set is flagged, not silently trusted.
+  **Validated** — `RunManifest.payload_set_version`/`payload_set_root`/`payload_set_age_days`/
+  `payload_set_stale` are in every receipt (`crates/vigil-core/src/receipt.rs`), computed from
+  `STALE_AFTER_DAYS`, not asserted.
 - **C2 (real target, real result).** At least one of the five "core" categories is run against a
   real, non-toy LLM application (not a synthetic mock) before this is called done, with the
   transcript and verdict shown, misses included — same rule tabularium's H3 pilot followed.
+  **Validated, all five core categories** — [`docs/pilot/2026-09-13-qwen3-4b.md`](pilot/2026-09-13-qwen3-4b.md):
+  a real local Ollama target, 36/36 core payloads run, 19 injected / 13 resisted / 4 network
+  timeouts reported as-is (not hidden), including the finding that LLM06 (excessive agency) is
+  where this target is worst (5/6 injected, including the undisguised baseline request).
 - **C3 (reproducibility).** Re-running the same payload set against the same target state
   produces a byte-identical receipt (modulo the target's own non-determinism, which should itself
   be measured and reported, not assumed away).
+  **Validated as stated, not as a stronger claim** — same pilot doc, "Reproducibility" section:
+  a same-target LLM06 rerun reproduced the *verdict* 6/6, but the *raw bytes* only 4/6 — the
+  target's own sampling non-determinism, measured rather than assumed away, exactly as this claim
+  is actually worded.
 
 ## 6. Roadmap
 
@@ -86,6 +97,10 @@ to replace.
    what it missed), partial LLM02/LLM08 coverage if time allows, README with the scope table
    from section 3 front and center.
 
-Status: not started. This file is the starting point — read `tabularium`'s `DESIGN.md` and
-`docs/DOGFOODING-NOTES.md` first for the reporting voice and the honesty conventions before
-writing a line of code.
+Status (2026-09-13): Weeks 1–4 done. Payload registry + versioning/staleness, target-adapter
+trait (OpenAI-compatible HTTP + tool-calling + an offline echo adapter), Ed25519 signed receipts
+ported from `bulla`, CI gate mode, and real payload sets for all five core categories (36 payloads:
+LLM01 10, LLM05 6, LLM06 6, LLM07 8, LLM10 6). All three claims (§5) validated for real against a
+live target — see [`docs/pilot/2026-09-13-qwen3-4b.md`](pilot/2026-09-13-qwen3-4b.md). Not done:
+LLM02/LLM08 partial coverage (§3 lists why each is only "partial" even when attempted); no
+GitHub remote pushed yet.

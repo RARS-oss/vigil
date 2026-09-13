@@ -1,6 +1,7 @@
 /target
 **/target
 .vigil/
+.vigil-pilot/
 *.log
 __pycache__/
 *.pyc
